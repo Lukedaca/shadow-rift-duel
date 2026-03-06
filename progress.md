@@ -96,3 +96,11 @@ Original prompt: Vytvoř originální bojovou hru ve stylu mortal kombat, stáhn
   - `README.md`
 - copied only the active runtime art subset into `assets/runtime/streets-of-fight`
 - updated `game.js` to load from `assets/runtime` so deploys no longer depend on the bulky exploration asset tree
+
+2026-03-06 - publish pass
+- local git release committed as `1a4ddb8 Initial Shadow Rift Duel release`
+- GitHub repository created and pushed:
+  - `https://github.com/Lukedaca/shadow-rift-duel`
+- Vercel production deployed successfully:
+  - `https://shadow-rift-duel.vercel.app`
+- live production check passed in a real browser session after deploy
