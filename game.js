@@ -131,6 +131,37 @@ const ATTACK_LIBRARY = {
   },
 };
 
+const audioManifest = {
+  music: {
+    backlotBrawl: {
+      src: "./assets/audio/runtime/music/backlot-brawl.ogg",
+      volume: 0.34,
+    },
+  },
+  sfx: {
+    hitLight: [
+      { src: "./assets/audio/runtime/sfx/hit-light-a.wav", volume: 0.98, voices: 5, rateMin: 0.98, rateMax: 1.04 },
+      { src: "./assets/audio/runtime/sfx/hit-light-b.wav", volume: 0.94, voices: 5, rateMin: 0.96, rateMax: 1.03 },
+    ],
+    hitHeavy: [
+      { src: "./assets/audio/runtime/sfx/hit-heavy-a.wav", volume: 1, voices: 5, rateMin: 0.94, rateMax: 1.01 },
+      { src: "./assets/audio/runtime/sfx/hit-heavy-b.wav", volume: 0.96, voices: 5, rateMin: 0.92, rateMax: 0.99 },
+    ],
+    block: [{ src: "./assets/audio/runtime/sfx/block.wav", volume: 0.84, voices: 4, rateMin: 0.98, rateMax: 1.02 }],
+    special: [{ src: "./assets/audio/runtime/sfx/special.ogg", volume: 0.84, voices: 4, rateMin: 0.96, rateMax: 1.03 }],
+    whooshLight: [{ src: "./assets/audio/runtime/sfx/whoosh-light.ogg", volume: 0.7, voices: 4, rateMin: 0.98, rateMax: 1.06 }],
+    whooshHeavy: [{ src: "./assets/audio/runtime/sfx/whoosh-heavy.ogg", volume: 0.8, voices: 4, rateMin: 0.94, rateMax: 1.01 }],
+    whooshSpecial: [{ src: "./assets/audio/runtime/sfx/whoosh-special.ogg", volume: 0.88, voices: 4, rateMin: 0.92, rateMax: 0.99 }],
+    jump: [{ src: "./assets/audio/runtime/sfx/jump.ogg", volume: 0.66, voices: 3, rateMin: 0.98, rateMax: 1.05 }],
+    land: [{ src: "./assets/audio/runtime/sfx/land.wav", volume: 0.76, voices: 4, rateMin: 0.96, rateMax: 1.02 }],
+    uiConfirm: [{ src: "./assets/audio/runtime/sfx/ui-confirm.ogg", volume: 0.62, voices: 3 }],
+    uiPause: [{ src: "./assets/audio/runtime/sfx/ui-pause.ogg", volume: 0.58, voices: 2 }],
+    uiResume: [{ src: "./assets/audio/runtime/sfx/ui-resume.ogg", volume: 0.6, voices: 2 }],
+    roundStart: [{ src: "./assets/audio/runtime/sfx/round-start.ogg", volume: 0.72, voices: 3 }],
+    win: [{ src: "./assets/audio/runtime/sfx/win.ogg", volume: 0.74, voices: 3 }],
+  },
+};
+
 const audio = new (class AudioEngine {
   constructor() {
     this.ctx = null;
@@ -138,40 +169,47 @@ const audio = new (class AudioEngine {
     this.noiseBuffer = null;
     this.ready = false;
     this.unlockPromise = null;
+    this.assetsPromise = null;
+    this.assetsReady = false;
+    this.sfxPools = new Map();
+    this.music = null;
+    this.musicTarget = 0;
+    this.musicReady = false;
   }
 
   unlock() {
-    if (this.ready && this.ctx) {
-      if (this.ctx.state === "suspended") {
-        return this.ctx.resume().catch(() => {});
+    if (this.ready) {
+      if (this.ctx?.state === "suspended") {
+        return this.ctx.resume().then(() => this.syncMusic(state)).catch(() => {});
       }
+      this.syncMusic(state);
       return Promise.resolve();
     }
     if (this.unlockPromise) {
       return this.unlockPromise;
     }
 
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) {
-      return Promise.resolve();
-    }
-
     this.unlockPromise = Promise.resolve().then(async () => {
-      this.ctx = this.ctx || new AudioContextClass();
-      if (this.ctx.state === "suspended") {
-        await this.ctx.resume();
-      }
-      this.master = this.master || this.ctx.createGain();
-      this.master.gain.value = 0.3;
-      this.master.connect(this.ctx.destination);
-      if (!this.noiseBuffer) {
-        this.noiseBuffer = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.4, this.ctx.sampleRate);
-        const data = this.noiseBuffer.getChannelData(0);
-        for (let i = 0; i < data.length; i++) {
-          data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass) {
+        this.ctx = this.ctx || new AudioContextClass();
+        if (this.ctx.state === "suspended") {
+          await this.ctx.resume();
+        }
+        this.master = this.master || this.ctx.createGain();
+        this.master.gain.value = 0.24;
+        this.master.connect(this.ctx.destination);
+        if (!this.noiseBuffer) {
+          this.noiseBuffer = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.4, this.ctx.sampleRate);
+          const data = this.noiseBuffer.getChannelData(0);
+          for (let i = 0; i < data.length; i++) {
+            data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+          }
         }
       }
+      await this.warmAssets();
       this.ready = true;
+      this.syncMusic(state);
       this.unlockPromise = null;
     }).catch(() => {
       this.unlockPromise = null;
@@ -180,8 +218,167 @@ const audio = new (class AudioEngine {
     return this.unlockPromise;
   }
 
-  tone(freq, duration, type, gainValue, glide = null) {
+  warmAssets() {
+    if (this.assetsPromise) {
+      return this.assetsPromise;
+    }
+
+    this.assetsPromise = Promise.resolve().then(() => {
+      if (typeof Audio !== "function") {
+        this.assetsReady = false;
+        return;
+      }
+
+      const waiters = [];
+      for (const [name, variants] of Object.entries(audioManifest.sfx)) {
+        const entries = variants.map((variant) => {
+          const voices = Array.from({ length: variant.voices || 3 }, () => {
+            const media = new Audio(variant.src);
+            media.preload = "auto";
+            media.load();
+            waiters.push(this.waitForMedia(media));
+            return media;
+          });
+          return {
+            ...variant,
+            cursor: 0,
+            voices,
+          };
+        });
+        this.sfxPools.set(name, entries);
+      }
+
+      this.music = new Audio(audioManifest.music.backlotBrawl.src);
+      this.music.preload = "auto";
+      this.music.loop = true;
+      this.music.volume = 0;
+      this.music.load();
+      waiters.push(
+        this.waitForMedia(this.music).then(() => {
+          this.musicReady = true;
+        }),
+      );
+
+      return Promise.all(waiters).then(() => {
+        this.assetsReady = true;
+      });
+    }).catch(() => {
+      this.assetsReady = false;
+    });
+
+    return this.assetsPromise;
+  }
+
+  waitForMedia(media) {
+    if (!media) {
+      return Promise.resolve(false);
+    }
+    if (media.readyState >= 2) {
+      return Promise.resolve(true);
+    }
+    return new Promise((resolve) => {
+      let settled = false;
+      const finalize = (result) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        media.removeEventListener("loadeddata", onReady);
+        media.removeEventListener("canplaythrough", onReady);
+        media.removeEventListener("error", onError);
+        resolve(result);
+      };
+      const onReady = () => finalize(true);
+      const onError = () => finalize(false);
+      media.addEventListener("loadeddata", onReady, { once: true });
+      media.addEventListener("canplaythrough", onReady, { once: true });
+      media.addEventListener("error", onError, { once: true });
+      setTimeout(() => finalize(media.readyState >= 2), 1600);
+    });
+  }
+
+  playSample(key, gain = 1) {
     if (!this.ready) {
+      return false;
+    }
+    const variants = this.sfxPools.get(key);
+    if (!variants?.length) {
+      return false;
+    }
+    const variant = variants[Math.floor(Math.random() * variants.length)];
+    const voice = variant.voices[variant.cursor];
+    variant.cursor = (variant.cursor + 1) % variant.voices.length;
+    if (!voice) {
+      return false;
+    }
+    try {
+      voice.pause();
+      voice.currentTime = 0;
+      voice.playbackRate = rand(variant.rateMin || 1, variant.rateMax || 1);
+      voice.volume = clamp((variant.volume || 1) * gain, 0, 1);
+      void voice.play().catch(() => {});
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  getMusicTarget(currentState) {
+    if (!this.ready || !this.music) {
+      return 0;
+    }
+    if (currentState.paused) {
+      return 0.04;
+    }
+    if (currentState.mode === "menu" || currentState.mode === "match-over") {
+      return 0.18 * audioManifest.music.backlotBrawl.volume;
+    }
+    if (currentState.mode === "intro") {
+      return 0.72 * audioManifest.music.backlotBrawl.volume;
+    }
+    if (currentState.mode === "fight") {
+      return audioManifest.music.backlotBrawl.volume;
+    }
+    if (currentState.mode === "outro") {
+      return 0.52 * audioManifest.music.backlotBrawl.volume;
+    }
+    return 0;
+  }
+
+  syncMusic(currentState) {
+    if (!this.music) {
+      return;
+    }
+    const target = this.getMusicTarget(currentState);
+    this.musicTarget = target;
+
+    if (target > 0.001) {
+      this.music.volume = clamp(lerp(this.music.volume, target, 0.14), 0, 1);
+      if (this.music.paused) {
+        void this.music.play().catch(() => {});
+      }
+      return;
+    }
+
+    this.music.volume = 0;
+    if (!this.music.paused) {
+      this.music.pause();
+    }
+  }
+
+  debugState() {
+    return {
+      ready: this.ready,
+      synthState: this.ctx ? this.ctx.state : "none",
+      externalReady: this.assetsReady,
+      musicReady: this.musicReady,
+      musicPaused: this.music ? this.music.paused : true,
+      musicVolume: this.music ? Number(this.music.volume.toFixed(3)) : 0,
+    };
+  }
+
+  tone(freq, duration, type, gainValue, glide = null) {
+    if (!this.ready || !this.ctx || !this.master) {
       return;
     }
     const now = this.ctx.currentTime;
@@ -202,7 +399,7 @@ const audio = new (class AudioEngine {
   }
 
   noise(duration, gainValue, playbackRate = 1) {
-    if (!this.ready) {
+    if (!this.ready || !this.ctx || !this.master || !this.noiseBuffer) {
       return;
     }
     const now = this.ctx.currentTime;
@@ -225,70 +422,84 @@ const audio = new (class AudioEngine {
 
   playHit(kind) {
     if (kind === "block") {
-      this.tone(180, 0.1, "square", 0.05, 90);
-      this.noise(0.06, 0.03, 1.7);
+      const sampled = this.playSample("block", 1.1);
+      this.tone(180, 0.08, "square", sampled ? 0.018 : 0.05, 90);
+      this.noise(0.05, sampled ? 0.01 : 0.03, 1.7);
       return;
     }
     if (kind === "heavy") {
-      this.tone(120, 0.14, "triangle", 0.09, 52);
-      this.noise(0.12, 0.05, 0.8);
+      const sampled = this.playSample("hitHeavy", 1.08);
+      this.tone(120, 0.13, "triangle", sampled ? 0.024 : 0.09, 52);
+      this.noise(0.08, sampled ? 0.014 : 0.05, 0.8);
       return;
     }
-    this.tone(210, 0.1, "triangle", 0.06, 110);
-    this.noise(0.08, 0.03, 1.4);
+    const sampled = this.playSample("hitLight", 1.08);
+    this.tone(210, 0.08, "triangle", sampled ? 0.018 : 0.06, 110);
+    this.noise(0.06, sampled ? 0.012 : 0.03, 1.4);
   }
 
   playSpecial() {
-    this.tone(280, 0.24, "sawtooth", 0.08, 620);
-    this.tone(150, 0.2, "triangle", 0.05, 90);
+    const sampled = this.playSample("special", 1.1);
+    this.tone(280, 0.22, "sawtooth", sampled ? 0.03 : 0.08, 620);
+    this.tone(150, 0.18, "triangle", sampled ? 0.02 : 0.05, 90);
   }
 
   playWhoosh(kind = "light") {
     if (kind === "heavy") {
-      this.noise(0.09, 0.035, 0.95);
-      this.tone(170, 0.08, "sawtooth", 0.035, 110);
+      const sampled = this.playSample("whooshHeavy", 1.02);
+      this.noise(0.08, sampled ? 0.012 : 0.035, 0.95);
+      this.tone(170, 0.08, "sawtooth", sampled ? 0.014 : 0.035, 110);
       return;
     }
     if (kind === "special") {
-      this.noise(0.14, 0.04, 0.7);
-      this.tone(220, 0.1, "sawtooth", 0.04, 360);
+      const sampled = this.playSample("whooshSpecial", 1.06);
+      this.noise(0.12, sampled ? 0.014 : 0.04, 0.7);
+      this.tone(220, 0.1, "sawtooth", sampled ? 0.016 : 0.04, 360);
       return;
     }
-    this.noise(0.05, 0.022, 1.4);
-    this.tone(260, 0.05, "triangle", 0.025, 180);
+    const sampled = this.playSample("whooshLight", 1);
+    this.noise(0.05, sampled ? 0.008 : 0.022, 1.4);
+    this.tone(260, 0.05, "triangle", sampled ? 0.01 : 0.025, 180);
   }
 
   playJump() {
-    this.tone(240, 0.08, "triangle", 0.045, 340);
-    this.noise(0.04, 0.015, 1.8);
+    const sampled = this.playSample("jump", 1);
+    this.tone(240, 0.08, "triangle", sampled ? 0.012 : 0.045, 340);
+    this.noise(0.04, sampled ? 0.006 : 0.015, 1.8);
   }
 
   playLand() {
-    this.tone(110, 0.06, "square", 0.035, 70);
-    this.noise(0.05, 0.02, 0.85);
+    const sampled = this.playSample("land", 1.02);
+    this.tone(110, 0.06, "square", sampled ? 0.012 : 0.035, 70);
+    this.noise(0.05, sampled ? 0.008 : 0.02, 0.85);
   }
 
   playUi(kind = "confirm") {
     if (kind === "pause") {
-      this.tone(320, 0.07, "triangle", 0.04, 220);
+      const sampled = this.playSample("uiPause", 1);
+      this.tone(320, 0.06, "triangle", sampled ? 0.012 : 0.04, 220);
       return;
     }
     if (kind === "resume") {
-      this.tone(260, 0.07, "triangle", 0.04, 360);
+      const sampled = this.playSample("uiResume", 1);
+      this.tone(260, 0.07, "triangle", sampled ? 0.012 : 0.04, 360);
       return;
     }
-    this.tone(520, 0.08, "triangle", 0.05, 700);
-    this.tone(780, 0.09, "triangle", 0.03, 980);
+    const sampled = this.playSample("uiConfirm", 1.04);
+    this.tone(520, 0.08, "triangle", sampled ? 0.012 : 0.05, 700);
+    this.tone(780, 0.09, "triangle", sampled ? 0.008 : 0.03, 980);
   }
 
   playRoundStart() {
-    this.tone(440, 0.12, "triangle", 0.07, 520);
-    this.tone(620, 0.18, "triangle", 0.06, 760);
+    const sampled = this.playSample("roundStart", 1.04);
+    this.tone(440, 0.12, "triangle", sampled ? 0.014 : 0.07, 520);
+    this.tone(620, 0.18, "triangle", sampled ? 0.01 : 0.06, 760);
   }
 
   playWin() {
-    this.tone(360, 0.18, "triangle", 0.07, 520);
-    this.tone(540, 0.24, "triangle", 0.06, 720);
+    const sampled = this.playSample("win", 1.06);
+    this.tone(360, 0.18, "triangle", sampled ? 0.014 : 0.07, 520);
+    this.tone(540, 0.24, "triangle", sampled ? 0.012 : 0.06, 720);
   }
 })();
 
@@ -467,6 +678,7 @@ function initAttractMode() {
   resetFighterForRound(state.fighters[1], WIDTH - 324, -1);
   setPose(state.fighters[0], "walk", true);
   setPose(state.fighters[1], "idle", true);
+  audio.syncMusic(state);
 }
 
 function initMatch() {
@@ -497,12 +709,14 @@ function beginRound() {
     timer: 1.1,
   };
   audio.playRoundStart();
+  audio.syncMusic(state);
 }
 
 async function startGame() {
   await audio.unlock();
   audio.playUi("confirm");
   initMatch();
+  audio.syncMusic(state);
   document.activeElement?.blur?.();
   canvas.focus();
 }
@@ -528,12 +742,14 @@ function resolveRoundResult() {
     timer: 2.6,
   };
   audio.playWin();
+  audio.syncMusic(state);
 }
 
 function togglePause() {
   if (state.mode !== "menu" && state.mode !== "match-over") {
     state.paused = !state.paused;
     audio.playUi(state.paused ? "pause" : "resume");
+    audio.syncMusic(state);
   }
 }
 
@@ -900,6 +1116,7 @@ function updateParticles() {
 }
 
 function updateWorld() {
+  audio.syncMusic(state);
   if (state.mode === "menu" || state.paused) {
     state.time += FIXED_STEP;
     state.weatherPulse += FIXED_STEP * 0.45;
@@ -1761,11 +1978,13 @@ function renderGameToText() {
     })),
     announcer: state.announcer.text,
     aiEnabled: state.aiEnabled,
+    audio: audio.debugState(),
   };
   return JSON.stringify(payload);
 }
 
 window.render_game_to_text = renderGameToText;
+window.shadowRiftAudio = audio;
 window.advanceTime = (ms) => {
   state.useManualClock = true;
   const steps = Math.max(1, Math.round(ms / FIXED_MS));
@@ -1798,6 +2017,10 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+document.addEventListener("pointerdown", () => {
+  void audio.unlock();
+});
+
 document.addEventListener("keyup", (event) => {
   if (GAME_KEYS.has(event.code)) {
     event.preventDefault();
@@ -1823,7 +2046,7 @@ aiToggle.addEventListener("change", () => {
   state.aiEnabled = aiToggle.checked;
 });
 
-warmSpriteAssets().then(() => {
+Promise.all([warmSpriteAssets(), audio.warmAssets()]).then(() => {
   initAttractMode();
   render();
 });

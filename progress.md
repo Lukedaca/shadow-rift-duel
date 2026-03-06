@@ -129,3 +129,42 @@ Original prompt: Vytvoř originální bojovou hru ve stylu mortal kombat, stáhn
     - before start: `ready=false`, `state=none`
     - after start: `ready=true`, `state=running`
     - after actions: `ready=true`, `state=running`
+
+2026-03-06 - pronounced sample-based audio pass
+- user requested much stronger sound effects plus retro background music and explicitly allowed downloading assets from the internet
+- source packs downloaded from OpenGameArt with clear CC0 licensing:
+  - `Thwack Sounds` by Jordan Irwin (AntumDeluge)
+  - `50 CC0 retro synth SFX` by rubberduck
+  - `8-bit Theme - On The Offensive` by Wolfgang_
+- local runtime subset created under `assets/audio/runtime`:
+  - impact WAVs for light/heavy/block/land
+  - retro synth OGGs for whooshes, UI, jump, special, round-start, and win cues
+  - looped retro music track `backlot-brawl.ogg`
+- engine changes:
+  - rewired `AudioEngine` to preload pooled HTML audio voices for downloaded samples while keeping WebAudio tones/noise as fallback accents
+  - added looped music playback with state-aware volume sync (`menu`, `intro`, `fight`, `outro`, `pause`)
+  - exposed richer debug data through `render_game_to_text` and `window.shadowRiftAudio`
+  - preloaded audio alongside sprite warmup so the first started round already has the full runtime mix
+- repo/deploy hygiene:
+  - added `assets/audio/_downloads` and `assets/audio/_packs` to `.gitignore` and `.vercelignore`
+  - only `assets/audio/runtime` is intended to ship
+- validation:
+  - `node --check game.js`
+  - `node --check server.js`
+  - official `develop-web-game` Playwright client run completed after the audio refactor; `output/web-game/state-0.json` showed:
+    - `audio.ready=true`
+    - `audio.externalReady=true`
+    - `audio.musicReady=true`
+    - `audio.musicPaused=false`
+    - `audio.musicVolume=0.34`
+  - screenshots reviewed:
+    - `output/web-game/shot-0.png`
+    - `test-artifacts-audio-runtime/audio-runtime.png`
+  - targeted runtime probe `test-artifacts-audio-runtime/audio-runtime.json` confirmed:
+    - music source switched to `assets/audio/runtime/music/backlot-brawl.ogg`
+    - music playback advanced to `3.576s`
+    - heavy hit, projectile/special, special whoosh, pause, and resume sample pools all registered real playback
+  - targeted coverage probes confirmed additional branches:
+    - `test-artifacts-audio-coverage/audio-coverage.json` showed `land` and `whooshLight`
+    - `test-artifacts-audio-coverage-locked/audio-coverage-locked.json` showed `jump`, `land`, `whooshLight`, and `whooshHeavy`
+  - no new browser console errors were reported in the probes

@@ -2,6 +2,8 @@
 .aegis
 node_modules
 output
+assets/audio/_downloads
+assets/audio/_packs
 assets/sprites
 server.log
 server.err
