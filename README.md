@@ -2,6 +2,10 @@
 
 Original browser arena fighter built in HTML, CSS, and JavaScript.
 
+## Credits
+
+Created by `Lukedaca` with implementation support from `OpenAI Codex` (GPT-5-based model).
+
 ## Run locally
 
 ```bash
