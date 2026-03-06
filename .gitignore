@@ -8,3 +8,5 @@ server.err
 server.pid
 test-artifacts
 test-artifacts-*
+
+.vercel
