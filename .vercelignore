@@ -1,0 +1,10 @@
+.git
+.aegis
+node_modules
+output
+assets/sprites
+server.log
+server.err
+server.pid
+test-artifacts
+test-artifacts-*

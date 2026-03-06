@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shadow Rift Duel</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="machine">
+    <section class="viewport">
+      <header class="broadcast-head" aria-hidden="true">
+        <div class="marquee">
+          <span class="marquee-kicker">Pirate signal // Sector 7</span>
+          <strong>Shadow Rift Duel</strong>
+        </div>
+        <div class="status-rack">
+          <span>Neon district live</span>
+          <span>Human sprite reels</span>
+          <span>Synth impact audio</span>
+        </div>
+      </header>
+
+      <canvas id="game" width="1280" height="720" tabindex="0" aria-label="Shadow Rift Duel canvas"></canvas>
+
+      <div class="control-dock">
+        <div class="button-bank">
+          <button id="start-btn" type="button">Start Duel</button>
+          <button id="pause-btn" type="button">Pause</button>
+          <button id="restart-btn" type="button">Restart</button>
+        </div>
+
+        <label class="toggle">
+          <input id="ai-toggle" type="checkbox" checked>
+          <span>AI sparring</span>
+        </label>
+
+        <div class="control-strip" aria-label="Controls">
+          <span>Move A/D or arrows</span>
+          <span>Jump W or Up</span>
+          <span>Block S or Down</span>
+          <span>Light J or Space</span>
+          <span>Heavy K or Q</span>
+          <span>Special L or B</span>
+          <span>P pause</span>
+          <span>F fullscreen</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="./game.js" defer></script>
+</body>
+</html>
