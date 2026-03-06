@@ -112,3 +112,20 @@ Original prompt: Vytvoř originální bojovou hru ve stylu mortal kombat, stáhn
   - added per-fighter `spriteFacing`
   - set `Riot Voss` to `spriteFacing: -1`
   - updated `drawFighter()` to render with `fighter.facing * fighter.spriteFacing`
+
+2026-03-06 - audio hotfix
+- user reported missing sound effects in practical play
+- root cause:
+  - synth effects existed in code, but `AudioContext` unlock flow was too fragile and could remain effectively silent in browsers that required an explicit resume path
+  - the game also lacked enough immediate audible feedback around non-hit interactions
+- fix:
+  - made `audio.unlock()` resilient with `resume()` support and reuse of a single unlock promise
+  - increased master gain slightly
+  - made `startGame()` await audio unlock before starting the round
+  - added audible UI/start, attack whoosh, jump, land, and pause/resume effects
+- validation:
+  - `node --check game.js`
+  - browser runtime check confirmed `AudioContext` state transitions:
+    - before start: `ready=false`, `state=none`
+    - after start: `ready=true`, `state=running`
+    - after actions: `ready=true`, `state=running`

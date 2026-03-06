@@ -137,26 +137,47 @@ const audio = new (class AudioEngine {
     this.master = null;
     this.noiseBuffer = null;
     this.ready = false;
+    this.unlockPromise = null;
   }
 
   unlock() {
-    if (this.ready) {
-      return;
+    if (this.ready && this.ctx) {
+      if (this.ctx.state === "suspended") {
+        return this.ctx.resume().catch(() => {});
+      }
+      return Promise.resolve();
     }
+    if (this.unlockPromise) {
+      return this.unlockPromise;
+    }
+
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextClass) {
-      return;
+      return Promise.resolve();
     }
-    this.ctx = new AudioContextClass();
-    this.master = this.ctx.createGain();
-    this.master.gain.value = 0.22;
-    this.master.connect(this.ctx.destination);
-    this.noiseBuffer = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.4, this.ctx.sampleRate);
-    const data = this.noiseBuffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-      data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
-    }
-    this.ready = true;
+
+    this.unlockPromise = Promise.resolve().then(async () => {
+      this.ctx = this.ctx || new AudioContextClass();
+      if (this.ctx.state === "suspended") {
+        await this.ctx.resume();
+      }
+      this.master = this.master || this.ctx.createGain();
+      this.master.gain.value = 0.3;
+      this.master.connect(this.ctx.destination);
+      if (!this.noiseBuffer) {
+        this.noiseBuffer = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.4, this.ctx.sampleRate);
+        const data = this.noiseBuffer.getChannelData(0);
+        for (let i = 0; i < data.length; i++) {
+          data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+        }
+      }
+      this.ready = true;
+      this.unlockPromise = null;
+    }).catch(() => {
+      this.unlockPromise = null;
+    });
+
+    return this.unlockPromise;
   }
 
   tone(freq, duration, type, gainValue, glide = null) {
@@ -220,6 +241,44 @@ const audio = new (class AudioEngine {
   playSpecial() {
     this.tone(280, 0.24, "sawtooth", 0.08, 620);
     this.tone(150, 0.2, "triangle", 0.05, 90);
+  }
+
+  playWhoosh(kind = "light") {
+    if (kind === "heavy") {
+      this.noise(0.09, 0.035, 0.95);
+      this.tone(170, 0.08, "sawtooth", 0.035, 110);
+      return;
+    }
+    if (kind === "special") {
+      this.noise(0.14, 0.04, 0.7);
+      this.tone(220, 0.1, "sawtooth", 0.04, 360);
+      return;
+    }
+    this.noise(0.05, 0.022, 1.4);
+    this.tone(260, 0.05, "triangle", 0.025, 180);
+  }
+
+  playJump() {
+    this.tone(240, 0.08, "triangle", 0.045, 340);
+    this.noise(0.04, 0.015, 1.8);
+  }
+
+  playLand() {
+    this.tone(110, 0.06, "square", 0.035, 70);
+    this.noise(0.05, 0.02, 0.85);
+  }
+
+  playUi(kind = "confirm") {
+    if (kind === "pause") {
+      this.tone(320, 0.07, "triangle", 0.04, 220);
+      return;
+    }
+    if (kind === "resume") {
+      this.tone(260, 0.07, "triangle", 0.04, 360);
+      return;
+    }
+    this.tone(520, 0.08, "triangle", 0.05, 700);
+    this.tone(780, 0.09, "triangle", 0.03, 980);
   }
 
   playRoundStart() {
@@ -440,8 +499,9 @@ function beginRound() {
   audio.playRoundStart();
 }
 
-function startGame() {
-  audio.unlock();
+async function startGame() {
+  await audio.unlock();
+  audio.playUi("confirm");
   initMatch();
   document.activeElement?.blur?.();
   canvas.focus();
@@ -473,6 +533,7 @@ function resolveRoundResult() {
 function togglePause() {
   if (state.mode !== "menu" && state.mode !== "match-over") {
     state.paused = !state.paused;
+    audio.playUi(state.paused ? "pause" : "resume");
   }
 }
 
@@ -678,6 +739,7 @@ function tryStartAttack(fighter, type) {
     projectileSpawned: false,
     spec,
   };
+  audio.playWhoosh(type);
   setPose(fighter, type, true);
 }
 
@@ -743,6 +805,7 @@ function updateProjectile(projectile, index) {
 
 function applyControlToFighter(fighter, enemy) {
   fighter.poseTime += FIXED_STEP;
+  const wasOnGround = fighter.onGround;
 
   if (fighter.health <= 0) {
     fighter.vx *= 0.88;
@@ -771,6 +834,7 @@ function applyControlToFighter(fighter, enemy) {
     if (fighter.canJump !== false && control.jump && fighter.onGround) {
       fighter.vy = -fighter.jumpVelocity;
       fighter.onGround = false;
+      audio.playJump();
       setPose(fighter, "jump", true);
     }
 
@@ -795,6 +859,10 @@ function applyControlToFighter(fighter, enemy) {
     fighter.onGround = true;
   } else {
     fighter.onGround = false;
+  }
+
+  if (!wasOnGround && fighter.onGround) {
+    audio.playLand();
   }
 
   fighter.x = clamp(fighter.x, STAGE_LEFT, STAGE_RIGHT);
@@ -1708,6 +1776,7 @@ window.advanceTime = (ms) => {
 };
 
 document.addEventListener("keydown", (event) => {
+  audio.unlock();
   if (GAME_KEYS.has(event.code)) {
     event.preventDefault();
   }
@@ -1718,7 +1787,7 @@ document.addEventListener("keydown", (event) => {
 
   if (event.code === "Enter" && (state.mode === "menu" || state.mode === "match-over")) {
     if (state.assetsReady) {
-      startGame();
+      void startGame();
     }
   }
   if (event.code === "KeyP") {
@@ -1738,7 +1807,7 @@ document.addEventListener("keyup", (event) => {
 
 startBtn.addEventListener("click", () => {
   if (state.assetsReady) {
-    startGame();
+    void startGame();
   }
 });
 
@@ -1747,7 +1816,7 @@ pauseBtn.addEventListener("click", () => {
 });
 
 restartBtn.addEventListener("click", () => {
-  startGame();
+  void startGame();
 });
 
 aiToggle.addEventListener("change", () => {
