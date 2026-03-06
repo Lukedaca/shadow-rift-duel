@@ -288,6 +288,7 @@ function getLoadedImage(src) {
 function createFighter(config) {
   return {
     ...config,
+    spriteFacing: config.spriteFacing ?? 1,
     x: config.startX,
     y: FLOOR_Y,
     vx: 0,
@@ -394,6 +395,7 @@ function buildRoster() {
       tint: "rgba(255, 147, 87, 0.2)",
       landingGlow: "rgba(255, 140, 90, 0.34)",
       canJump: false,
+      spriteFacing: -1,
     }),
   ];
 }
@@ -1357,7 +1359,7 @@ function drawFighter(fighter) {
 
   ctx.save();
   ctx.translate(fighter.x, fighter.y + bob);
-  ctx.scale(fighter.facing, 1);
+  ctx.scale(fighter.facing * fighter.spriteFacing, 1);
 
   const aura = ctx.createRadialGradient(0, -fighter.renderHeight * 0.54, 16, 0, -fighter.renderHeight * 0.5, fighter.renderWidth * 0.7);
   aura.addColorStop(0, fighter.tint);

@@ -104,3 +104,11 @@ Original prompt: Vytvoř originální bojovou hru ve stylu mortal kombat, stáhn
 - Vercel production deployed successfully:
   - `https://shadow-rift-duel.vercel.app`
 - live production check passed in a real browser session after deploy
+
+2026-03-06 - enemy sprite orientation hotfix
+- user reported that the opponent still visually read as facing away even though gameplay-facing values were updating
+- root cause: `Enemy Punk` needed a different render baseline than `Brawler Girl`
+- fix:
+  - added per-fighter `spriteFacing`
+  - set `Riot Voss` to `spriteFacing: -1`
+  - updated `drawFighter()` to render with `fighter.facing * fighter.spriteFacing`
